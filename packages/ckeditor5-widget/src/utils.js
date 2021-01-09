@@ -109,6 +109,7 @@ export function toWidget( element, writer, options = {} ) {
 	}
 
 	writer.setAttribute( 'contenteditable', 'false', element );
+	writer.setAttribute( 'draggable', 'true', element );
 
 	writer.addClass( WIDGET_CLASS_NAME, element );
 	writer.setCustomProperty( 'widget', true, element );

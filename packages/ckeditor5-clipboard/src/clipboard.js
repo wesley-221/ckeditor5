@@ -18,6 +18,7 @@ import viewToPlainText from './utils/viewtoplaintext.js';
 
 import HtmlDataProcessor from '@ckeditor/ckeditor5-engine/src/dataprocessor/htmldataprocessor';
 import EventInfo from '@ckeditor/ckeditor5-utils/src/eventinfo';
+import LiveRange from '@ckeditor/ckeditor5-engine/src/model/liverange';
 
 /**
  * The clipboard feature. It is responsible for intercepting the `paste` and `drop` events and
@@ -55,10 +56,18 @@ export default class Clipboard extends Plugin {
 		/**
 		 * Data processor used to convert pasted HTML to a view structure.
 		 *
-		 * @private
-		 * @member {module:engine/dataprocessor/htmldataprocessor~HtmlDataProcessor} #_htmlDataProcessor
+		 * @readonly
+		 * @member {module:engine/dataprocessor/htmldataprocessor~HtmlDataProcessor} #htmlDataProcessor
 		 */
-		this._htmlDataProcessor = new HtmlDataProcessor( viewDocument );
+		this.htmlDataProcessor = new HtmlDataProcessor( viewDocument );
+
+		/**
+		 * The range that was selected while dragging started.
+		 *
+ 		 * @type {module:engine/model/liverange~LiveRange}
+		 * @private
+		 */
+		this._draggedRange = null;
 
 		view.addObserver( ClipboardObserver );
 
@@ -82,7 +91,7 @@ export default class Clipboard extends Plugin {
 				content = plainTextToHtml( dataTransfer.getData( 'text/plain' ) );
 			}
 
-			content = this._htmlDataProcessor.toView( content );
+			content = this.htmlDataProcessor.toView( content );
 
 			const eventInfo = new EventInfo( this, 'inputTransformation' );
 			this.fire( eventInfo, {
@@ -105,6 +114,12 @@ export default class Clipboard extends Plugin {
 			if ( !data.content.isEmpty ) {
 				const dataController = this.editor.data;
 				const model = this.editor.model;
+				const selection = model.document.selection;
+
+				// Don't do anything if some content was dragged within the same document to the same position.
+				if ( this._draggedRange && this._draggedRange.containsRange( selection.getFirstRange(), true ) ) {
+					return;
+				}
 
 				// Convert the pasted content to a model document fragment.
 				// Conversion is contextual, but in this case we need an "all allowed" context and for that
@@ -116,7 +131,10 @@ export default class Clipboard extends Plugin {
 				}
 
 				model.change( writer => {
-					const selection = model.document.selection;
+					// Remove dragged content from it's original position.
+					if ( this._draggedRange ) {
+						model.deleteContent( editor.model.createSelection( this._draggedRange ), { doNotAutoparagraph: true } );
+					}
 
 					// Plain text can be determined based on event flag (#7799) or auto detection (#1006). If detected
 					// preserve selection attributes on pasted items.
@@ -175,7 +193,7 @@ export default class Clipboard extends Plugin {
 
 		this.listenTo( viewDocument, 'clipboardOutput', ( evt, data ) => {
 			if ( !data.content.isEmpty ) {
-				data.dataTransfer.setData( 'text/html', this._htmlDataProcessor.toData( data.content ) );
+				data.dataTransfer.setData( 'text/html', this.htmlDataProcessor.toData( data.content ) );
 				data.dataTransfer.setData( 'text/plain', viewToPlainText( data.content ) );
 			}
 
@@ -183,6 +201,65 @@ export default class Clipboard extends Plugin {
 				editor.model.deleteContent( modelDocument.selection );
 			}
 		}, { priority: 'low' } );
+
+		// Drag & drop handling.
+
+		this.listenTo( viewDocument, 'dragstart', ( evt, data ) => {
+			const selection = modelDocument.selection;
+			const domConverter = editor.editing.view.domConverter;
+
+			if ( selection.isCollapsed ) {
+				data.preventDefault();
+
+				return;
+			}
+
+			if ( data.domTarget.nodeType == 1 && domConverter.mapDomToView( data.domTarget ).is( 'rootElement' ) ) {
+				data.preventDefault();
+
+				return;
+			}
+
+			const content = editor.data.toView( editor.model.getSelectedContent( modelDocument.selection ) );
+
+			this._draggedRange = LiveRange.fromRange( modelDocument.selection.getFirstRange() );
+
+			viewDocument.fire( 'clipboardOutput', { dataTransfer: data.dataTransfer, content, method: evt.name } );
+		}, { priority: 'low' } );
+
+		this.listenTo( viewDocument, 'dragend', () => {
+			this._draggedRange.detach();
+			this._draggedRange = null;
+		}, { priority: 'low' } );
+
+		this.listenTo( viewDocument, 'dragging', ( evt, data ) => {
+			const mapper = editor.editing.mapper;
+
+			if ( editor.isReadOnly ) {
+				return;
+			}
+
+			const targetPosition = mapper.toModelPosition( data.targetRanges[ 0 ].start );
+			const targetRange = findDropTargetRange( editor.model, targetPosition );
+
+			if ( targetRange ) {
+				editor.model.change( writer => {
+					writer.setSelection( targetRange );
+				} );
+			}
+		}, { priority: 'low' } );
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	destroy() {
+		if ( this._draggedRange ) {
+			this._draggedRange.detach();
+			this._draggedRange = null;
+		}
+
+		return super.destroy();
 	}
 }
 
@@ -259,4 +336,31 @@ function isPlainTextFragment( documentFragment, schema ) {
 	}
 
 	return [ ...child.getAttributeKeys() ].length == 0;
+}
+
+// Returns fixed selection range for given position.
+//
+// @param {module:engine/model/model~Model} model
+// @param {module:engine/model/position~Position} position
+// @returns {module:engine/model/range~Range}
+function findDropTargetRange( model, position ) {
+	// The position will be just after a widget if the mouse cursor was just before a widget.
+	const newRange = model.schema.getNearestSelectionRange( position, 'backward' );
+
+	if ( newRange ) {
+		return newRange;
+	}
+
+	// There is no valid position inside the current limit element so find closest object ancestor.
+	let element = position.parent;
+
+	while ( element ) {
+		if ( model.schema.isObject( element ) ) {
+			return model.createRangeOn( element );
+		}
+
+		element = element.parent;
+	}
+
+	return null;
 }

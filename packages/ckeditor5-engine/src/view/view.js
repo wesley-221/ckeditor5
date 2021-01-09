@@ -254,6 +254,8 @@ export default class View {
 
 		this._initialDomRootAttributes.set( domRoot, initialDomRootAttributes );
 
+		this._writer.setAttribute( 'draggable', 'true', viewRoot );
+
 		const updateContenteditableAttribute = () => {
 			this._writer.setAttribute( 'contenteditable', !viewRoot.isReadOnly, viewRoot );
 

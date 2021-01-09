@@ -93,18 +93,21 @@ export default class HtmlEmbedEditing extends Plugin {
 
 		const htmlEmbedConfig = editor.config.get( 'htmlEmbed' );
 
-		// Register div.raw-html-embed as a raw content element so all of it's content will be provided
-		// as a view element's custom property while data upcasting.
-		editor.data.processor.registerRawContentMatcher( {
+		const viewMatcherPattern = {
 			name: 'div',
 			classes: 'raw-html-embed'
-		} );
+		};
+
+		// Register div.raw-html-embed as a raw content element so all of it's content will be provided
+		// as a view element's custom property while data upcasting.
+		editor.data.processor.registerRawContentMatcher( viewMatcherPattern );
+
+		if ( editor.plugins.has( 'Clipboard' ) ) {
+			editor.plugins.get( 'Clipboard' ).htmlDataProcessor.registerRawContentMatcher( viewMatcherPattern );
+		}
 
 		editor.conversion.for( 'upcast' ).elementToElement( {
-			view: {
-				name: 'div',
-				classes: 'raw-html-embed'
-			},
+			view: viewMatcherPattern,
 			model: ( viewElement, { writer } ) => {
 				// The div.raw-html-embed is registered as a raw content element,
 				// so all it's content is available in a custom property.

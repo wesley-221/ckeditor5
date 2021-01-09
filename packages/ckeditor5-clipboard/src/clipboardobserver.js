@@ -36,29 +36,32 @@ export default class ClipboardObserver extends DomEventObserver {
 
 		const viewDocument = this.document;
 
-		this.domEventType = [ 'paste', 'copy', 'cut', 'drop', 'dragover' ];
+		this.domEventType = [ 'paste', 'copy', 'cut', 'drop', 'dragover', 'dragstart', 'dragend' ];
 
-		this.listenTo( viewDocument, 'paste', handleInput, { priority: 'low' } );
-		this.listenTo( viewDocument, 'drop', handleInput, { priority: 'low' } );
+		this.listenTo( viewDocument, 'paste', handleInput( 'clipboardInput' ), { priority: 'low' } );
+		this.listenTo( viewDocument, 'drop', handleInput( 'clipboardInput' ), { priority: 'low' } );
+		this.listenTo( viewDocument, 'dragover', handleInput( 'dragging' ), { priority: 'low' } );
 
-		function handleInput( evt, data ) {
-			data.preventDefault();
+		function handleInput( type ) {
+			return ( evt, data ) => {
+				data.preventDefault();
 
-			const targetRanges = data.dropRange ? [ data.dropRange ] : Array.from( viewDocument.selection.getRanges() );
+				const targetRanges = data.dropRange ? [ data.dropRange ] : Array.from( viewDocument.selection.getRanges() );
 
-			const eventInfo = new EventInfo( viewDocument, 'clipboardInput' );
+				const eventInfo = new EventInfo( viewDocument, type );
 
-			viewDocument.fire( eventInfo, {
-				dataTransfer: data.dataTransfer,
-				targetRanges
-			} );
+				viewDocument.fire( eventInfo, {
+					dataTransfer: data.dataTransfer,
+					targetRanges
+				} );
 
-			// If CKEditor handled the input, do not bubble the original event any further.
-			// This helps external integrations recognize that fact and act accordingly.
-			// https://github.com/ckeditor/ckeditor5-upload/issues/92
-			if ( eventInfo.stop.called ) {
-				data.stopPropagation();
-			}
+				// If CKEditor handled the input, do not bubble the original event any further.
+				// This helps external integrations recognize that fact and act accordingly.
+				// https://github.com/ckeditor/ckeditor5-upload/issues/92
+				if ( eventInfo.stop.called ) {
+					data.stopPropagation();
+				}
+			};
 		}
 	}
 
@@ -67,7 +70,7 @@ export default class ClipboardObserver extends DomEventObserver {
 			dataTransfer: new DataTransfer( domEvent.clipboardData ? domEvent.clipboardData : domEvent.dataTransfer )
 		};
 
-		if ( domEvent.type == 'drop' ) {
+		if ( domEvent.type == 'drop' || domEvent.type == 'dragover' ) {
 			evtData.dropRange = getDropViewRange( this.view, domEvent );
 		}
 
