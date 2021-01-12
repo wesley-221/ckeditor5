@@ -46,7 +46,7 @@ export default class ImageUploadCommand extends Command {
 	 */
 	refresh() {
 		const imageElement = this.editor.model.document.selection.getSelectedElement();
-		const isImage = imageElement && imageElement.name === 'image' || false;
+		const isImage = imageElement && [ 'image', 'imageInline' ].includes( imageElement.name ) || false;
 
 		this.isEnabled = isImageAllowed( this.editor.model ) || isImage;
 	}
@@ -60,21 +60,20 @@ export default class ImageUploadCommand extends Command {
 	 */
 	execute( options ) {
 		const editor = this.editor;
-		const model = editor.model;
-
 		const fileRepository = editor.plugins.get( FileRepository );
 
 		for ( const file of toArray( options.file ) ) {
-			uploadImage( model, fileRepository, file );
+			uploadImage( editor, fileRepository, file );
 		}
 	}
 }
 
 // Handles uploading single file.
 //
-// @param {module:engine/model/model~Model} model
+// @param {module:core/editor/editor~Editor} editor
+// @param {module:upload/filerepository~FileRepository} fileRepository
 // @param {File} file
-function uploadImage( model, fileRepository, file ) {
+function uploadImage( editor, fileRepository, file ) {
 	const loader = fileRepository.createLoader( file );
 
 	// Do not throw when upload adapter is not set. FileRepository will log an error anyway.
@@ -82,5 +81,5 @@ function uploadImage( model, fileRepository, file ) {
 		return;
 	}
 
-	insertImage( model, { uploadId: loader.id } );
+	insertImage( editor, { uploadId: loader.id }, editor.model.document.selection );
 }

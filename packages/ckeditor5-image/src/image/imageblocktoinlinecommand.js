@@ -8,7 +8,7 @@
  */
 
 import Command from '@ckeditor/ckeditor5-core/src/command';
-import { isImage } from './utils';
+import { isImage, insertImage } from './utils';
 
 /**
  * The image inline command. It is used to convert block image io inline image.
@@ -52,13 +52,6 @@ export default class ImageBlockToInlineCommand extends Command {
 			attrs.srcset = srcset;
 		}
 
-		model.change( writer => {
-			const paragraph = writer.createElement( 'paragraph' );
-			const imageInlineElement = writer.createElement( 'imageInline', attrs );
-
-			writer.append( imageInlineElement, paragraph );
-			model.insertContent( paragraph, selection );
-			writer.setSelection( imageInlineElement, 'on' );
-		} );
+		insertImage( this.editor, attrs, selection, 'inline' );
 	}
 }

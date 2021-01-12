@@ -260,7 +260,7 @@ describe( 'image widget utils', () => {
 		it( 'should insert image at selection position as other widgets', () => {
 			setModelData( model, '<paragraph>f[o]o</paragraph>' );
 
-			insertImage( model );
+			insertImage( editor, null, null, 'block' );
 
 			expect( getModelData( model ) ).to.equal( '[<image></image>]<paragraph>foo</paragraph>' );
 		} );
@@ -268,7 +268,7 @@ describe( 'image widget utils', () => {
 		it( 'should insert image with given attributes', () => {
 			setModelData( model, '<paragraph>f[o]o</paragraph>' );
 
-			insertImage( model, { src: 'bar' } );
+			insertImage( editor, { src: 'bar' }, null, 'block' );
 
 			expect( getModelData( model ) ).to.equal( '[<image src="bar"></image>]<paragraph>foo</paragraph>' );
 		} );
@@ -284,7 +284,7 @@ describe( 'image widget utils', () => {
 
 			setModelData( model, '<other>[]</other>' );
 
-			insertImage( model );
+			insertImage( editor, null, null, 'block' );
 
 			expect( getModelData( model ) ).to.equal( '<other>[]</other>' );
 		} );

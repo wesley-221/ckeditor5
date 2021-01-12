@@ -9,6 +9,8 @@
 
 import { findOptimalInsertionPosition, isWidget, toWidget } from '@ckeditor/ckeditor5-widget/src/utils';
 
+export const IMAGE_INSERT_DEFAULT_TYPE = 'inline';
+
 /**
  * Converts a given {@link module:engine/view/element~Element} to an image widget:
  * * Adds a {@link module:engine/view/element~Element#_setCustomProperty custom property} allowing to recognize the image widget element.
@@ -83,16 +85,30 @@ export function isImageInline( modelElement ) {
  *
  *		insertImage( model, { src: 'path/to/image.jpg' } );
  *
- * @param {module:engine/model/model~Model} model
+ * @param {module:core/editor/editor~Editor} editor
  * @param {Object} [attributes={}] Attributes of inserted image
  * @param {module:engine/model/position~Position} [insertPosition] Position to insert the image. If not specified,
  * the {@link module:widget/utils~findOptimalInsertionPosition} logic will be applied.
+ * @param {'block'|'inline'|'smart'} [imageInsertType] Type of an image to insert.
  */
-export function insertImage( model, attributes = {}, insertPosition = null ) {
-	model.change( writer => {
-		const imageElement = writer.createElement( 'image', attributes );
+export function insertImage( editor, attributes = {}, insertPosition = null, imageInsertType = null ) {
+	const model = editor.model;
+	const selection = model.document.selection;
 
-		const insertAtSelection = insertPosition || findOptimalInsertionPosition( model.document.selection, model );
+	if ( !imageInsertType ) {
+		imageInsertType = editor.config.get( 'image.insert.type' ) || IMAGE_INSERT_DEFAULT_TYPE;
+	}
+
+	if ( imageInsertType === 'smart' ) {
+		const firstBlock = selection.getSelectedBlocks().next().value;
+		imageInsertType = firstBlock.isEmpty ? 'block' : 'inline';
+	}
+
+	model.change( writer => {
+		const elementName = imageInsertType === 'inline' ? 'imageInline' : 'image';
+		const imageElement = writer.createElement( elementName, attributes );
+
+		const insertAtSelection = insertPosition || findOptimalInsertionPosition( selection, model );
 
 		model.insertContent( imageElement, insertAtSelection );
 

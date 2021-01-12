@@ -52,7 +52,7 @@ export default class ImageInsertCommand extends Command {
 		const model = this.editor.model;
 
 		for ( const src of toArray( options.source ) ) {
-			insertImage( model, { src } );
+			insertImage( this.editor, { src }, model.document.selection );
 		}
 	}
 }

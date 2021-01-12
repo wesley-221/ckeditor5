@@ -42,11 +42,14 @@ export default class ImageUploadEditing extends Plugin {
 	constructor( editor ) {
 		super( editor );
 
-		editor.config.define( 'image', {
+		const config = {
 			upload: {
 				types: [ 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff' ]
 			}
-		} );
+		};
+
+		editor.config.define( 'image', config );
+		editor.config.define( 'imageInline', config );
 	}
 
 	/**
@@ -63,6 +66,10 @@ export default class ImageUploadEditing extends Plugin {
 
 		// Setup schema to allow uploadId and uploadStatus for images.
 		schema.extend( 'image', {
+			allowAttributes: [ 'uploadId', 'uploadStatus' ]
+		} );
+
+		schema.extend( 'imageInline', {
 			allowAttributes: [ 'uploadId', 'uploadStatus' ]
 		} );
 
@@ -340,6 +347,6 @@ export function isHtmlIncluded( dataTransfer ) {
 
 function getImagesFromChangeItem( editor, item ) {
 	return Array.from( editor.model.createRangeOn( item ) )
-		.filter( value => value.item.is( 'element', 'image' ) )
+		.filter( value => value.item.is( 'element', 'image' ) || value.item.is( 'element', 'imageInline' ) )
 		.map( value => value.item );
 }

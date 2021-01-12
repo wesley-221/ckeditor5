@@ -52,6 +52,6 @@ export default class ImageInlineToBlockCommand extends Command {
 			attrs.srcset = srcset;
 		}
 
-		insertImage( model, attrs, selection );
+		insertImage( this.editor, attrs, selection, 'block' );
 	}
 }
