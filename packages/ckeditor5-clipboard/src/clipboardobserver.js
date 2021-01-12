@@ -52,6 +52,7 @@ export default class ClipboardObserver extends DomEventObserver {
 
 				viewDocument.fire( eventInfo, {
 					dataTransfer: data.dataTransfer,
+					method: evt.name,
 					targetRanges
 				} );
 

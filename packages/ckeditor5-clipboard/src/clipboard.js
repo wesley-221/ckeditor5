@@ -19,6 +19,12 @@ import viewToPlainText from './utils/viewtoplaintext.js';
 import HtmlDataProcessor from '@ckeditor/ckeditor5-engine/src/dataprocessor/htmldataprocessor';
 import EventInfo from '@ckeditor/ckeditor5-utils/src/eventinfo';
 import LiveRange from '@ckeditor/ckeditor5-engine/src/model/liverange';
+import MouseObserver from '@ckeditor/ckeditor5-engine/src/view/observer/mouseobserver';
+import env from '@ckeditor/ckeditor5-utils/src/env';
+import { isWidget } from '@ckeditor/ckeditor5-widget/src/utils';
+import { throttle } from 'lodash-es';
+
+import '../theme/clipboard.css';
 
 /**
  * The clipboard feature. It is responsible for intercepting the `paste` and `drop` events and
@@ -49,7 +55,6 @@ export default class Clipboard extends Plugin {
 	 */
 	init() {
 		const editor = this.editor;
-		const modelDocument = editor.model.document;
 		const view = editor.editing.view;
 		const viewDocument = view.document;
 
@@ -64,14 +69,38 @@ export default class Clipboard extends Plugin {
 		/**
 		 * The range that was selected while dragging started.
 		 *
- 		 * @type {module:engine/model/liverange~LiveRange}
+		 * @type {module:engine/model/liverange~LiveRange}
 		 * @private
 		 */
 		this._draggedRange = null;
 
 		view.addObserver( ClipboardObserver );
+		view.addObserver( MouseObserver );
 
-		// The clipboard paste pipeline.
+		this._setupPasteDrop();
+		this._setupCopyCut();
+		this._setupDragging();
+	}
+
+	/**
+	 * @inheritDoc
+	 */
+	destroy() {
+		if ( this._draggedRange ) {
+			this._draggedRange.detach();
+			this._draggedRange = null;
+		}
+
+		this._updateMarkersThrottled.cancel();
+
+		return super.destroy();
+	}
+
+	// The clipboard paste pipeline.
+	_setupPasteDrop() {
+		const editor = this.editor;
+		const view = editor.editing.view;
+		const viewDocument = view.document;
 
 		// Pasting and dropping is disabled when editor is read-only.
 		// See: https://github.com/ckeditor/ckeditor5-clipboard/issues/26.
@@ -82,6 +111,7 @@ export default class Clipboard extends Plugin {
 		}, { priority: 'highest' } );
 
 		this.listenTo( viewDocument, 'clipboardInput', ( evt, data ) => {
+			const selection = editor.model.document.selection;
 			const dataTransfer = data.dataTransfer;
 			let content = '';
 
@@ -89,6 +119,25 @@ export default class Clipboard extends Plugin {
 				content = normalizeClipboardHtml( dataTransfer.getData( 'text/html' ) );
 			} else if ( dataTransfer.getData( 'text/plain' ) ) {
 				content = plainTextToHtml( dataTransfer.getData( 'text/plain' ) );
+			}
+
+			if ( data.method == 'drop' ) {
+				const targetPosition = editor.editing.mapper.toModelPosition( data.targetRanges[ 0 ].start );
+				const targetRange = findDropTargetRange( editor.model, targetPosition );
+
+				if ( targetRange ) {
+					editor.model.change( writer => {
+						writer.setSelection( targetRange );
+					} );
+				}
+
+				// Don't do anything if some content was dragged within the same document to the same position.
+				if ( this._draggedRange && this._draggedRange.containsRange( selection.getFirstRange(), true ) ) {
+					dataTransfer.dropEffect = 'none';
+					this._finalizeDragging( false );
+
+					return;
+				}
 			}
 
 			content = this.htmlDataProcessor.toView( content );
@@ -116,11 +165,6 @@ export default class Clipboard extends Plugin {
 				const model = this.editor.model;
 				const selection = model.document.selection;
 
-				// Don't do anything if some content was dragged within the same document to the same position.
-				if ( this._draggedRange && this._draggedRange.containsRange( selection.getFirstRange(), true ) ) {
-					return;
-				}
-
 				// Convert the pasted content to a model document fragment.
 				// Conversion is contextual, but in this case we need an "all allowed" context and for that
 				// we use the $clipboardHolder item.
@@ -132,9 +176,7 @@ export default class Clipboard extends Plugin {
 
 				model.change( writer => {
 					// Remove dragged content from it's original position.
-					if ( this._draggedRange ) {
-						model.deleteContent( editor.model.createSelection( this._draggedRange ), { doNotAutoparagraph: true } );
-					}
+					this._finalizeDragging( true );
 
 					// Plain text can be determined based on event flag (#7799) or auto detection (#1006). If detected
 					// preserve selection attributes on pasted items.
@@ -167,8 +209,14 @@ export default class Clipboard extends Plugin {
 				evt.stop();
 			}
 		}, { priority: 'low' } );
+	}
 
-		// The clipboard copy/cut pipeline.
+	// The clipboard copy/cut pipeline.
+	_setupCopyCut() {
+		const editor = this.editor;
+		const modelDocument = editor.model.document;
+		const view = editor.editing.view;
+		const viewDocument = view.document;
 
 		function onCopyCut( evt, data ) {
 			const dataTransfer = data.dataTransfer;
@@ -201,8 +249,14 @@ export default class Clipboard extends Plugin {
 				editor.model.deleteContent( modelDocument.selection );
 			}
 		}, { priority: 'low' } );
+	}
 
-		// Drag & drop handling.
+	// Drag & drop handling.
+	_setupDragging() {
+		const editor = this.editor;
+		const modelDocument = editor.model.document;
+		const view = editor.editing.view;
+		const viewDocument = view.document;
 
 		this.listenTo( viewDocument, 'dragstart', ( evt, data ) => {
 			const selection = modelDocument.selection;
@@ -220,6 +274,9 @@ export default class Clipboard extends Plugin {
 				return;
 			}
 
+			data.dataTransfer.effectAllowed = 'move';
+			data.dataTransfer.dropEffect = 'move';
+
 			const content = editor.data.toView( editor.model.getSelectedContent( modelDocument.selection ) );
 
 			this._draggedRange = LiveRange.fromRange( modelDocument.selection.getFirstRange() );
@@ -227,39 +284,157 @@ export default class Clipboard extends Plugin {
 			viewDocument.fire( 'clipboardOutput', { dataTransfer: data.dataTransfer, content, method: evt.name } );
 		}, { priority: 'low' } );
 
-		this.listenTo( viewDocument, 'dragend', () => {
-			this._draggedRange.detach();
-			this._draggedRange = null;
+		this.listenTo( viewDocument, 'dragend', ( evt, data ) => {
+			this._finalizeDragging( !data.dataTransfer.isCanceled );
 		}, { priority: 'low' } );
 
 		this.listenTo( viewDocument, 'dragging', ( evt, data ) => {
 			const mapper = editor.editing.mapper;
 
 			if ( editor.isReadOnly ) {
+				data.dataTransfer.dropEffect = 'none';
+
 				return;
 			}
 
 			const targetPosition = mapper.toModelPosition( data.targetRanges[ 0 ].start );
 			const targetRange = findDropTargetRange( editor.model, targetPosition );
 
+			data.dataTransfer.dropEffect = targetRange ? 'move' : 'none';
+
 			if ( targetRange ) {
-				editor.model.change( writer => {
-					writer.setSelection( targetRange );
-				} );
+				this._updateMarkersThrottled( targetRange );
 			}
 		}, { priority: 'low' } );
+
+		this._updateMarkersThrottled = throttle( targetRange => {
+			const editor = this.editor;
+
+			editor.model.change( writer => {
+				const markerName = `drop-target:${ targetRange.isCollapsed ? 'position' : 'range' }`;
+				const otherMarkerName = `drop-target:${ !targetRange.isCollapsed ? 'position' : 'range' }`;
+
+				if ( editor.model.markers.has( markerName ) ) {
+					writer.updateMarker( markerName, { range: targetRange } );
+				} else {
+					if ( editor.model.markers.has( otherMarkerName ) ) {
+						writer.removeMarker( otherMarkerName );
+					}
+
+					writer.addMarker( markerName, {
+						range: targetRange,
+						usingOperation: false,
+						affectsData: false
+					} );
+				}
+			} );
+		}, 40 );
+
+		// Enable dragging text nodes.
+		if ( !env.isSafari ) {
+			view.change( writer => {
+				for ( const viewRoot of viewDocument.roots ) {
+					writer.setAttribute( 'draggable', 'true', viewRoot );
+				}
+			} );
+
+			this.listenTo( viewDocument.roots, 'add', viewRoot => {
+				view.change( writer => {
+					writer.setAttribute( 'draggable', 'true', viewRoot );
+				} );
+			} );
+		}
+
+		editor.conversion.for( 'editingDowncast' ).markerToElement( {
+			model: 'drop-target:position',
+			view: ( data, { writer } ) => {
+				// Check in schema to place UIElement only in place where text is allowed.
+				if ( !editor.model.schema.checkChild( data.markerRange.start, '$text' ) ) {
+					return;
+				}
+
+				return writer.createUIElement( 'span', { class: 'ck-drop-target__position' }, function( domDocument ) {
+					const domElement = this.toDomElement( domDocument );
+
+					domElement.innerHTML = '&#8203;<span class="ck-drop-target__line"></span>';
+
+					return domElement;
+				} );
+			}
+		} );
+
+		editor.conversion.for( 'editingDowncast' ).markerToHighlight( {
+			model: 'drop-target:range',
+			view: {
+				classes: [ 'ck-drop-target__range' ]
+			}
+		} );
+
+		// Add 'draggable' attribute to the widget while pressing the selection handle.
+		this.listenTo( viewDocument, 'mousedown', ( evt, data ) => {
+			if ( !data.target.hasClass( 'ck-widget__selection-handle' ) ) {
+				return;
+			}
+
+			const widget = data.target.findAncestor( isWidget );
+
+			view.change( writer => writer.setAttribute( 'draggable', 'true', widget ) );
+		} );
 	}
 
 	/**
-	 * @inheritDoc
+	 * Delete the dragged content from it's original range.
+	 *
+	 * @private
+	 * @param {Boolean} moved Whether the move succeeded.
 	 */
-	destroy() {
-		if ( this._draggedRange ) {
-			this._draggedRange.detach();
-			this._draggedRange = null;
+	_finalizeDragging( moved ) {
+		const editor = this.editor;
+		const model = editor.model;
+		const editing = editor.editing;
+
+		this._removeDraggingMarkers();
+
+		if ( !this._draggedRange ) {
+			return;
 		}
 
-		return super.destroy();
+		if ( moved ) {
+			model.deleteContent( model.createSelection( this._draggedRange ), { doNotAutoparagraph: true } );
+		} else {
+			const modelElement = this._draggedRange.getContainedElement();
+			const viewElement = modelElement ? editing.mapper.toViewElement( modelElement ) : null;
+
+			if ( viewElement && isWidget( viewElement ) ) {
+				editing.view.change( writer => writer.removeAttribute( 'draggable', viewElement ) );
+			}
+		}
+
+		this._draggedRange.detach();
+		this._draggedRange = null;
+	}
+
+	/**
+	 * Remove drop target markers.
+	 *
+	 * @private
+	 */
+	_removeDraggingMarkers() {
+		const model = this.editor.model;
+
+		this._updateMarkersThrottled.cancel();
+
+		if ( model.markers.has( 'drop-target:position' ) ) {
+			model.change( writer => {
+				writer.removeMarker( 'drop-target:position' );
+			} );
+		}
+
+		if ( model.markers.has( 'drop-target:range' ) ) {
+			model.change( writer => {
+				writer.removeMarker( 'drop-target:range' );
+			} );
+		}
 	}
 }
 

@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) 2003-2020, CKSource - Frederico Knabben. All rights reserved.
+ * For licensing, see LICENSE.md or https://ckeditor.com/legal/ckeditor-oss-license
+ */
+
+:root {
+	--ck-drop-target-dot-size: 6px;
+}
+
+.ck {
+	& .ck-drop-target__position {
+		display: inline-block;
+		position: relative;
+		height: 100%;
+	}
+
+	& .ck-drop-target__line {
+		position: absolute;
+		width: 0;
+		bottom: calc( -.5 * var(--ck-drop-target-dot-size) );
+		top: calc( -1 * var(--ck-drop-target-dot-size) );
+		border: 1px solid var(--ck-color-focus-border);
+		margin-left: -1px;
+
+		&::after {
+			content: "";
+			width: 0;
+			height: 0;
+
+			display: block;
+			position: absolute;
+			left: 50%;
+			top: calc( var(--ck-drop-target-dot-size) * -1 );
+
+			transform: translateX( -50% );
+			border-color: var(--ck-color-focus-border) transparent transparent transparent;
+			border-width: calc( 2 * var(--ck-drop-target-dot-size) ) var(--ck-drop-target-dot-size) 0 var(--ck-drop-target-dot-size);
+			border-style: solid;
+		}
+	}
+
+	& .ck-widget.ck-drop-target__range {
+		outline: var(--ck-widget-outline-thickness) solid var(--ck-color-focus-border);
+	}
+}
