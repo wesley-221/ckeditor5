@@ -41,5 +41,22 @@
 
 	& .ck-widget.ck-drop-target__range {
 		outline: var(--ck-widget-outline-thickness) solid var(--ck-color-focus-border);
+		position: relative;
+
+		&::after {
+			content: "";
+			width: 0;
+			height: 0;
+
+			display: block;
+			position: absolute;
+			left: 50%;
+			top: calc( var(--ck-drop-target-dot-size) * -2 - var(--ck-widget-outline-thickness) );
+
+			transform: translateX( -50% );
+			border-color: var(--ck-color-focus-border) transparent transparent transparent;
+			border-width: calc( 2 * var(--ck-drop-target-dot-size) ) var(--ck-drop-target-dot-size) 0 var(--ck-drop-target-dot-size);
+			border-style: solid;
+		}
 	}
 }

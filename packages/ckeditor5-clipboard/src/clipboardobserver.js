@@ -46,14 +46,14 @@ export default class ClipboardObserver extends DomEventObserver {
 			return ( evt, data ) => {
 				data.preventDefault();
 
-				const targetRanges = data.dropRange ? [ data.dropRange ] : Array.from( viewDocument.selection.getRanges() );
-
+				const targetRanges = data.dropRange ? [ data.dropRange ] : null;
 				const eventInfo = new EventInfo( viewDocument, type );
 
 				viewDocument.fire( eventInfo, {
 					dataTransfer: data.dataTransfer,
 					method: evt.name,
-					targetRanges
+					targetRanges,
+					target: data.target
 				} );
 
 				// If CKEditor handled the input, do not bubble the original event any further.
@@ -98,9 +98,9 @@ function getDropViewRange( view, domEvent ) {
 
 	if ( domRange ) {
 		return view.domConverter.domRangeToView( domRange );
-	} else {
-		return view.document.selection.getFirstRange();
 	}
+
+	return null;
 }
 
 /**

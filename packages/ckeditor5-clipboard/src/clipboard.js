@@ -56,6 +56,18 @@ export default class Clipboard extends Plugin {
 		const editor = this.editor;
 		const view = editor.editing.view;
 
+		/**
+		 * TODO
+		 * @private
+		 */
+		this._draggedRange = null;
+
+		/**
+		 * TODO
+		 * @private
+		 */
+		this._draggableElement = null;
+
 		view.addObserver( ClipboardObserver );
 		view.addObserver( MouseObserver );
 
@@ -104,8 +116,7 @@ export default class Clipboard extends Plugin {
 			}
 
 			if ( data.method == 'drop' ) {
-				const targetPosition = editor.editing.mapper.toModelPosition( data.targetRanges[ 0 ].start );
-				const targetRange = findDropTargetRange( editor.model, targetPosition );
+				const targetRange = findDropTargetRange( editor, data.targetRanges, data.target );
 
 				if ( targetRange ) {
 					editor.model.change( writer => {
@@ -271,21 +282,19 @@ export default class Clipboard extends Plugin {
 		}, { priority: 'low' } );
 
 		this.listenTo( viewDocument, 'dragging', ( evt, data ) => {
-			const mapper = editor.editing.mapper;
-
 			if ( editor.isReadOnly ) {
 				data.dataTransfer.dropEffect = 'none';
 
 				return;
 			}
 
-			const targetPosition = mapper.toModelPosition( data.targetRanges[ 0 ].start );
-			const targetRange = findDropTargetRange( editor.model, targetPosition );
-
-			data.dataTransfer.dropEffect = targetRange ? 'move' : 'none';
+			const targetRange = findDropTargetRange( editor, data.targetRanges, data.target );
 
 			if ( targetRange ) {
 				this._updateMarkersThrottled( targetRange );
+				data.dataTransfer.dropEffect = 'move';
+			} else {
+				data.dataTransfer.dropEffect = 'none';
 			}
 		}, { priority: 'low' } );
 
@@ -311,21 +320,6 @@ export default class Clipboard extends Plugin {
 				}
 			} );
 		}, 40 );
-
-		// Enable dragging text nodes.
-		if ( !env.isSafari ) {
-			view.change( writer => {
-				for ( const viewRoot of viewDocument.roots ) {
-					writer.setAttribute( 'draggable', 'true', viewRoot );
-				}
-			} );
-
-			this.listenTo( viewDocument.roots, 'add', viewRoot => {
-				view.change( writer => {
-					writer.setAttribute( 'draggable', 'true', viewRoot );
-				} );
-			} );
-		}
 
 		editor.conversion.for( 'editingDowncast' ).markerToElement( {
 			model: 'drop-target:position',
@@ -354,13 +348,22 @@ export default class Clipboard extends Plugin {
 
 		// Add 'draggable' attribute to the widget while pressing the selection handle.
 		this.listenTo( viewDocument, 'mousedown', ( evt, data ) => {
-			if ( !data.target.hasClass( 'ck-widget__selection-handle' ) ) {
-				return;
+			if ( data.target.hasClass( 'ck-widget__selection-handle' ) ) {
+				const widget = data.target.findAncestor( isWidget );
+
+				this._draggableElement = widget;
+				view.change( writer => writer.setAttribute( 'draggable', 'true', widget ) );
 			}
 
-			const widget = data.target.findAncestor( isWidget );
+			// Set attribute 'draggable' on editable to allow immediate dragging of selected range.
+			else if ( env.isBlink && !viewDocument.selection.isCollapsed ) {
+				this._draggableElement = viewDocument.selection.editableElement;
+				view.change( writer => writer.setAttribute( 'draggable', 'true', this._draggableElement ) );
+			}
+		} );
 
-			view.change( writer => writer.setAttribute( 'draggable', 'true', widget ) );
+		this.listenTo( viewDocument, 'mouseup', () => {
+			this._clearDraggableAttributes();
 		} );
 	}
 
@@ -373,27 +376,37 @@ export default class Clipboard extends Plugin {
 	_finalizeDragging( moved ) {
 		const editor = this.editor;
 		const model = editor.model;
-		const editing = editor.editing;
 
 		this._removeDraggingMarkers();
+		this._clearDraggableAttributes();
 
 		if ( !this._draggedRange ) {
 			return;
 		}
 
+		// Delete moved content.
 		if ( moved ) {
 			model.deleteContent( model.createSelection( this._draggedRange ), { doNotAutoparagraph: true } );
-		} else {
-			const modelElement = this._draggedRange.getContainedElement();
-			const viewElement = modelElement ? editing.mapper.toViewElement( modelElement ) : null;
-
-			if ( viewElement && isWidget( viewElement ) ) {
-				editing.view.change( writer => writer.removeAttribute( 'draggable', viewElement ) );
-			}
 		}
 
 		this._draggedRange.detach();
 		this._draggedRange = null;
+	}
+
+	/**
+	 * TODO
+	 *
+	 * @private
+	 */
+	_clearDraggableAttributes() {
+		if ( !this._draggableElement ) {
+			return;
+		}
+
+		// Remove 'draggable' attribute.
+		this.editor.editing.view.change( writer => writer.removeAttribute( 'draggable', this._draggableElement ) );
+
+		this._draggableElement = null;
 	}
 
 	/**
@@ -498,19 +511,47 @@ function isPlainTextFragment( documentFragment, schema ) {
 // Returns fixed selection range for given position.
 //
 // @param {module:engine/model/model~Model} model
-// @param {module:engine/model/position~Position} position
+// @param TODO
 // @returns {module:engine/model/range~Range}
-function findDropTargetRange( model, position ) {
-	// The position will be just after a widget if the mouse cursor was just before a widget.
-	const newRange = model.schema.getNearestSelectionRange( position, 'backward' );
+function findDropTargetRange( editor, targetViewRanges, targetViewElement ) {
+	const model = editor.model;
+	const mapper = editor.editing.mapper;
+	const view = editor.editing.view;
 
-	if ( newRange ) {
-		return newRange;
+	const targetViewPosition = targetViewRanges ? targetViewRanges[ 0 ].start : null;
+	const targetModelPosition = targetViewPosition ? mapper.toModelPosition( targetViewPosition ) : null;
+
+	let targetModelElement = mapper.toModelElement( targetViewElement );
+
+	// Find mapped ancestor if the target is inside the UIElement or any not mapped element.
+	if ( !targetModelElement ) {
+		targetModelElement = mapper.toModelElement( mapper.findMappedViewAncestor( view.createPositionBefore( targetViewElement ) ) );
 	}
 
-	// There is no valid position inside the current limit element so find closest object ancestor.
-	let element = position.parent;
+	// console.log( 'element:', targetModelElement.name, '-', 'path:', targetModelPosition ? `[${ targetModelPosition.path }]` : 'n/a' );
 
+	// In Safari target position can be empty while hovering over a widget (for example page-break).
+	// In all browsers there is no target position while hovering over an empty table cell.
+	if ( !targetModelPosition ) {
+		// Try searching for selectable position inside the element (for example empty table cell).
+		const newRange = model.schema.getNearestSelectionRange( model.createPositionAt( targetModelElement, 0 ), 'forward' );
+
+		// Find closest ancestor that is an object and return range on it if no valid selection range is found inside the element.
+		return newRange ? newRange : findObjectAncestorRange( model, targetModelElement );
+	}
+
+	// There is a model position so try to fix it.
+	else {
+		// Try fixing selection position. In FF the target position is before widgets but in other browsers it tend to land after a widget.
+		const newRange = model.schema.getNearestSelectionRange( targetModelPosition, env.isGecko ? 'forward' : 'backward' );
+
+		// There is no valid position inside the current limit element so find closest object ancestor.
+		return newRange ? newRange : findObjectAncestorRange( model, targetModelPosition.parent );
+	}
+}
+
+// TODO
+function findObjectAncestorRange( model, element ) {
 	while ( element ) {
 		if ( model.schema.isObject( element ) ) {
 			return model.createRangeOn( element );
