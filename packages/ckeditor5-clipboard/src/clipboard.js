@@ -16,7 +16,6 @@ import plainTextToHtml from './utils/plaintexttohtml';
 import normalizeClipboardHtml from './utils/normalizeclipboarddata';
 import viewToPlainText from './utils/viewtoplaintext.js';
 
-import HtmlDataProcessor from '@ckeditor/ckeditor5-engine/src/dataprocessor/htmldataprocessor';
 import EventInfo from '@ckeditor/ckeditor5-utils/src/eventinfo';
 import LiveRange from '@ckeditor/ckeditor5-engine/src/model/liverange';
 import MouseObserver from '@ckeditor/ckeditor5-engine/src/view/observer/mouseobserver';
@@ -56,23 +55,6 @@ export default class Clipboard extends Plugin {
 	init() {
 		const editor = this.editor;
 		const view = editor.editing.view;
-		const viewDocument = view.document;
-
-		/**
-		 * Data processor used to convert pasted HTML to a view structure.
-		 *
-		 * @readonly
-		 * @member {module:engine/dataprocessor/htmldataprocessor~HtmlDataProcessor} #htmlDataProcessor
-		 */
-		this.htmlDataProcessor = new HtmlDataProcessor( viewDocument );
-
-		/**
-		 * The range that was selected while dragging started.
-		 *
-		 * @type {module:engine/model/liverange~LiveRange}
-		 * @private
-		 */
-		this._draggedRange = null;
 
 		view.addObserver( ClipboardObserver );
 		view.addObserver( MouseObserver );
@@ -140,7 +122,7 @@ export default class Clipboard extends Plugin {
 				}
 			}
 
-			content = this.htmlDataProcessor.toView( content );
+			content = this.editor.data.htmlProcessor.toView( content );
 
 			const eventInfo = new EventInfo( this, 'inputTransformation' );
 			this.fire( eventInfo, {
@@ -241,7 +223,7 @@ export default class Clipboard extends Plugin {
 
 		this.listenTo( viewDocument, 'clipboardOutput', ( evt, data ) => {
 			if ( !data.content.isEmpty ) {
-				data.dataTransfer.setData( 'text/html', this.htmlDataProcessor.toData( data.content ) );
+				data.dataTransfer.setData( 'text/html', this.editor.data.htmlProcessor.toData( data.content ) );
 				data.dataTransfer.setData( 'text/plain', viewToPlainText( data.content ) );
 			}
 
