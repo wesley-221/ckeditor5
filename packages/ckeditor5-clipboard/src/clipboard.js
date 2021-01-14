@@ -172,7 +172,10 @@ export default class Clipboard extends Plugin {
 
 				model.change( writer => {
 					// Remove dragged content from it's original position.
-					this._finalizeDragging( true );
+					const dropEffect = env.isGecko ? data.dataTransfer.dropEffect : data.dataTransfer.effectAllowed;
+
+					// TODO this should be handled only in dragend if it will work correctly (and the above check would not be needed).
+					this._finalizeDragging( [ 'move', 'copyMove' ].includes( dropEffect ) );
 
 					// Plain text can be determined based on event flag (#7799) or auto detection (#1006). If detected
 					// preserve selection attributes on pasted items.
