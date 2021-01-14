@@ -43,7 +43,7 @@
 		outline: var(--ck-widget-outline-thickness) solid var(--ck-color-focus-border);
 		position: relative;
 
-		&::after {
+		&::before {
 			content: "";
 			width: 0;
 			height: 0;
@@ -57,6 +57,19 @@
 			border-color: var(--ck-color-focus-border) transparent transparent transparent;
 			border-width: calc( 2 * var(--ck-drop-target-dot-size) ) var(--ck-drop-target-dot-size) 0 var(--ck-drop-target-dot-size);
 			border-style: solid;
+		}
+	}
+
+	& .ck-widget:-webkit-drag {
+		zoom: 0.6;
+		outline: none !important;
+
+		& .ck-widget__selection-handle {
+			display: none;
+		}
+
+		& .ck-widget__type-around {
+			display: none;
 		}
 	}
 }

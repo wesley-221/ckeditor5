@@ -258,17 +258,23 @@ export default class Clipboard extends Plugin {
 			const selection = modelDocument.selection;
 			const domConverter = editor.editing.view.domConverter;
 
+			// Don't start dragging if nothing is selected.
 			if ( selection.isCollapsed ) {
 				data.preventDefault();
 
 				return;
 			}
 
+			// Don't drag editable element.
 			if ( data.domTarget.nodeType == 1 && domConverter.mapDomToView( data.domTarget ).is( 'rootElement' ) ) {
 				data.preventDefault();
 
 				return;
 			}
+
+			// TODO we could clone this node somewhere and style it to match editing view but without handles,
+			//  selection outline, WTA buttons, etc.
+			// data.dataTransfer._native.setDragImage( data.domTarget, 0, 0 );
 
 			data.dataTransfer.effectAllowed = 'copyMove';
 
@@ -279,11 +285,18 @@ export default class Clipboard extends Plugin {
 			viewDocument.fire( 'clipboardOutput', { dataTransfer: data.dataTransfer, content, method: evt.name } );
 		}, { priority: 'low' } );
 
+		// TODO this is not fired if source text node got removed while downcasting marker
+		//  (it's not possible to move to other editor, only copy).
 		this.listenTo( viewDocument, 'dragend', ( evt, data ) => {
 			this._finalizeDragging( !data.dataTransfer.isCanceled && data.dataTransfer.dropEffect == 'move' );
 		}, { priority: 'low' } );
 
+		this.listenTo( viewDocument, 'dragenter', () => {
+			view.focus();
+		} );
+
 		this.listenTo( viewDocument, 'dragleave', ( evt, data ) => {
+			// TODO in Safari there is no relatedTarget while dragging over the text.
 			if ( !data.relatedTarget ) {
 				this._removeDraggingMarkers();
 			}
@@ -361,12 +374,25 @@ export default class Clipboard extends Plugin {
 				const widget = data.target.findAncestor( isWidget );
 
 				this._draggableElement = widget;
-				view.change( writer => writer.setAttribute( 'draggable', 'true', widget ) );
 			}
 
-			// Set attribute 'draggable' on editable to allow immediate dragging of selected range.
-			else if ( env.isBlink && !viewDocument.selection.isCollapsed ) {
+			// Set attribute 'draggable' on editable to allow immediate dragging of the selected text range.
+			else if ( env.isBlink && !viewDocument.selection.isCollapsed && !editor.model.document.selection.getSelectedElement() ) {
 				this._draggableElement = viewDocument.selection.editableElement;
+			}
+
+			// Check if there is a widget to drag if mouse down wasn't directly on the editable element.
+			else if ( !data.target.is( 'editableElement' ) ) {
+				// Find closest ancestor that is either a widget or an editable element...
+				const ancestor = data.target.findAncestor( node => isWidget( node ) || node.is( 'editableElement' ) );
+
+				// ...and if closer was the widget then enable dragging it.
+				if ( isWidget( ancestor ) ) {
+					this._draggableElement = ancestor;
+				}
+			}
+
+			if ( this._draggableElement ) {
 				view.change( writer => writer.setAttribute( 'draggable', 'true', this._draggableElement ) );
 			}
 		} );
