@@ -36,7 +36,7 @@ export default class ClipboardObserver extends DomEventObserver {
 
 		const viewDocument = this.document;
 
-		this.domEventType = [ 'paste', 'copy', 'cut', 'drop', 'dragover', 'dragstart', 'dragend' ];
+		this.domEventType = [ 'paste', 'copy', 'cut', 'drop', 'dragover', 'dragstart', 'dragend', 'dragleave' ];
 
 		this.listenTo( viewDocument, 'paste', handleInput( 'clipboardInput' ), { priority: 'low' } );
 		this.listenTo( viewDocument, 'drop', handleInput( 'clipboardInput' ), { priority: 'low' } );
@@ -73,6 +73,10 @@ export default class ClipboardObserver extends DomEventObserver {
 
 		if ( domEvent.type == 'drop' || domEvent.type == 'dragover' ) {
 			evtData.dropRange = getDropViewRange( this.view, domEvent );
+		}
+
+		if ( domEvent.type == 'dragleave' ) {
+			evtData.relatedTarget = this.view.domConverter.mapDomToView( domEvent.relatedTarget );
 		}
 
 		this.fire( domEvent.type, domEvent, evtData );

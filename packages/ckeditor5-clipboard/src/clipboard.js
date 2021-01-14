@@ -122,11 +122,14 @@ export default class Clipboard extends Plugin {
 					editor.model.change( writer => {
 						writer.setSelection( targetRange );
 					} );
+				} else {
+					this._finalizeDragging( false );
+
+					return;
 				}
 
 				// Don't do anything if some content was dragged within the same document to the same position.
 				if ( this._draggedRange && this._draggedRange.containsRange( selection.getFirstRange(), true ) ) {
-					dataTransfer.dropEffect = 'none';
 					this._finalizeDragging( false );
 
 					return;
@@ -267,8 +270,7 @@ export default class Clipboard extends Plugin {
 				return;
 			}
 
-			data.dataTransfer.effectAllowed = 'move';
-			data.dataTransfer.dropEffect = 'move';
+			data.dataTransfer.effectAllowed = 'copyMove';
 
 			const content = editor.data.toView( editor.model.getSelectedContent( modelDocument.selection ) );
 
@@ -278,8 +280,14 @@ export default class Clipboard extends Plugin {
 		}, { priority: 'low' } );
 
 		this.listenTo( viewDocument, 'dragend', ( evt, data ) => {
-			this._finalizeDragging( !data.dataTransfer.isCanceled );
+			this._finalizeDragging( !data.dataTransfer.isCanceled && data.dataTransfer.dropEffect == 'move' );
 		}, { priority: 'low' } );
+
+		this.listenTo( viewDocument, 'dragleave', ( evt, data ) => {
+			if ( !data.relatedTarget ) {
+				this._removeDraggingMarkers();
+			}
+		} );
 
 		this.listenTo( viewDocument, 'dragging', ( evt, data ) => {
 			if ( editor.isReadOnly ) {
@@ -292,7 +300,6 @@ export default class Clipboard extends Plugin {
 
 			if ( targetRange ) {
 				this._updateMarkersThrottled( targetRange );
-				data.dataTransfer.dropEffect = 'move';
 			} else {
 				data.dataTransfer.dropEffect = 'none';
 			}
@@ -306,7 +313,9 @@ export default class Clipboard extends Plugin {
 				const otherMarkerName = `drop-target:${ !targetRange.isCollapsed ? 'position' : 'range' }`;
 
 				if ( editor.model.markers.has( markerName ) ) {
-					writer.updateMarker( markerName, { range: targetRange } );
+					if ( !editor.model.markers.get( markerName ).getRange().isEqual( targetRange ) ) {
+						writer.updateMarker( markerName, { range: targetRange } );
+					}
 				} else {
 					if ( editor.model.markers.has( otherMarkerName ) ) {
 						writer.removeMarker( otherMarkerName );
