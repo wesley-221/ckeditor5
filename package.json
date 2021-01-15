@@ -174,7 +174,7 @@
     "**/*.css": [
       "stylelint --quiet --allow-empty-input"
     ],
-    "**/*.{js,json,css}": [
+    "**/(*.{js,css}|package.json)": [
       "yarn run check-dependencies"
     ]
   },
