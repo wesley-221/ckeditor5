@@ -116,6 +116,13 @@ export default class Renderer {
 		 * @type {null|HTMLElement}
 		 */
 		this._fakeSelectionContainer = null;
+
+		/**
+		 * TODO
+		 * @type {WeakSet<Text>}
+		 * @private
+		 */
+		this._splittedTextNodes = new WeakSet();
 	}
 
 	/**
@@ -259,14 +266,14 @@ export default class Renderer {
 			return;
 		}
 
-		const actualDomChildren = this.domConverter.mapViewToDom( viewElement ).childNodes;
+		const actualDomChildren = domElement.childNodes;
 		const expectedDomChildren = Array.from(
 			this.domConverter.viewChildrenToDom( viewElement, domElement.ownerDocument, { withChildren: false } )
 		);
 		const diff = this._diffNodeLists( actualDomChildren, expectedDomChildren );
 		const actions = this._findReplaceActions( diff, actualDomChildren, expectedDomChildren );
 
-		if ( actions.indexOf( 'replace' ) !== -1 ) {
+		if ( actions.includes( 'replace' ) ) {
 			const counter = { equal: 0, insert: 0, delete: 0 };
 
 			for ( const action of actions ) {
@@ -533,7 +540,7 @@ export default class Renderer {
 		}
 
 		const inlineFillerPosition = options.inlineFillerPosition;
-		const actualDomChildren = this.domConverter.mapViewToDom( viewElement ).childNodes;
+		let actualDomChildren = domElement.childNodes;
 		const expectedDomChildren = Array.from(
 			this.domConverter.viewChildrenToDom( viewElement, domElement.ownerDocument, { bind: true, inlineFillerPosition } )
 		);
@@ -545,7 +552,18 @@ export default class Renderer {
 			addInlineFiller( domElement.ownerDocument, expectedDomChildren, inlineFillerPosition.offset );
 		}
 
-		const diff = this._diffNodeLists( actualDomChildren, expectedDomChildren );
+		// Find insertion/deletion positions in text nodes and split them.
+		const { insertionOffsets, deletionOffsets } = findInsertionsAndDeletions( actualDomChildren, expectedDomChildren );
+
+		this._splitTextNodes( expectedDomChildren, deletionOffsets );
+		this._splitTextNodes( expectedDomChildren, insertionOffsets );
+		this._splitTextNodes( actualDomChildren, deletionOffsets );
+		this._splitTextNodes( actualDomChildren, insertionOffsets );
+
+		actualDomChildren = domElement.childNodes;
+
+		// After splitting text nodes we can check the differences for nodes.
+		const actions = this._diffNodeLists( actualDomChildren, expectedDomChildren );
 
 		let i = 0;
 		const nodesToUnbind = new Set();
@@ -556,7 +574,7 @@ export default class Renderer {
 		// and it disrupts the whole algorithm. See https://github.com/ckeditor/ckeditor5/issues/6367.
 		//
 		// It doesn't matter in what order we remove or add nodes, as long as we remove and add correct nodes at correct indexes.
-		for ( const action of diff ) {
+		for ( const action of actions ) {
 			if ( action === 'delete' ) {
 				nodesToUnbind.add( actualDomChildren[ i ] );
 				remove( actualDomChildren[ i ] );
@@ -567,7 +585,7 @@ export default class Renderer {
 
 		i = 0;
 
-		for ( const action of diff ) {
+		for ( const action of actions ) {
 			if ( action === 'insert' ) {
 				insertAt( domElement, i, expectedDomChildren[ i ] );
 				i++;
@@ -578,6 +596,9 @@ export default class Renderer {
 				i++;
 			}
 		}
+
+		// Normalization of split text nodes. This is not using normalize method to keep the original node in the document.
+		this._normalizeNodes( domElement );
 
 		// Unbind removed nodes. When node does not have a parent it means that it was removed from DOM tree during
 		// comparison with the expected DOM. We don't need to check child nodes, because if child node was reinserted,
@@ -620,7 +641,7 @@ export default class Renderer {
 	 */
 	_findReplaceActions( actions, actualDom, expectedDom ) {
 		// If there is no both 'insert' and 'delete' actions, no need to check for replaced elements.
-		if ( actions.indexOf( 'insert' ) === -1 || actions.indexOf( 'delete' ) === -1 ) {
+		if ( !actions.includes( 'insert' ) || !actions.includes( 'delete' ) ) {
 			return actions;
 		}
 
@@ -868,6 +889,76 @@ export default class Renderer {
 			}
 		}
 	}
+
+	/**
+	 * TODO
+	 * @param nodes
+	 * @param offsets
+	 * @private
+	 */
+	_splitTextNodes( nodes, offsets ) {
+		for ( const offset of offsets ) {
+			let idx = 0;
+			let node = null;
+			let nodeIndex = 0;
+
+			for ( nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++ ) {
+				node = nodes[ nodeIndex ];
+				const nodeSize = node.nodeType == 3 ? node.data.length : 1;
+
+				if ( offset < idx + nodeSize ) {
+					break;
+				}
+
+				idx += nodeSize;
+			}
+
+			const nodeOffset = offset - idx;
+
+			if ( isText( node ) && nodeOffset > 0 && nodeOffset < node.data.length ) {
+				const newNode = node.splitText( nodeOffset );
+
+				this._splittedTextNodes.add( node );
+
+				if ( Array.isArray( nodes ) ) {
+					nodes.splice( nodeIndex + 1, 0, newNode );
+				} else {
+					nodes = node.parentNode.childNodes;
+				}
+			}
+		}
+	}
+
+	/**
+	 * TODO
+	 * @param domElement
+	 * @private
+	 */
+	_normalizeNodes( domElement ) {
+		// Normalization of split text nodes. This is not using normalize method to keep the original node in the document.
+		for ( const node of domElement.childNodes ) {
+			if ( node.nodeType === 3 && this._splittedTextNodes.has( node ) ) {
+				while ( node.previousSibling && node.previousSibling.nodeType === 3 ) {
+					node.insertData( 0, node.previousSibling.data );
+					remove( node.previousSibling, 1 );
+				}
+
+				while ( node.nextSibling && node.nextSibling.nodeType === 3 ) {
+					node.appendData( node.nextSibling.data );
+					remove( node.nextSibling, 1 );
+				}
+			}
+		}
+
+		for ( const node of domElement.childNodes ) {
+			if ( node.nodeType === 3 ) {
+				while ( node.nextSibling && node.nextSibling.nodeType === 3 ) {
+					node.appendData( node.nextSibling.data );
+					remove( node.nextSibling, 1 );
+				}
+			}
+		}
+	}
 }
 
 mix( Renderer, ObservableMixin );
@@ -951,7 +1042,7 @@ function sameNodes( domConverter, actualDomChild, expectedDomChild ) {
 	}
 	// Texts.
 	else if ( isText( actualDomChild ) && isText( expectedDomChild ) ) {
-		return actualDomChild.data === expectedDomChild.data;
+		return actualDomChild.data.replace( /\u00A0/g, ' ' ) === expectedDomChild.data.replace( /\u00A0/g, ' ' );
 	}
 	// Block fillers.
 	else if ( domConverter.isBlockFiller( actualDomChild ) &&
@@ -1026,4 +1117,29 @@ function createFakeSelectionContainer( domDocument ) {
 	container.textContent = '\u00A0';
 
 	return container;
+}
+
+// TODO
+function findInsertionsAndDeletions( actualDomChildren, expectedDomChildren ) {
+	const actualText = Array.from( actualDomChildren )
+		.map( node => node.nodeType == 3 ? node.data : '@' ).join( '' ).replace( /\u00A0/g, ' ' );
+	const expectedText = Array.from( expectedDomChildren )
+		.map( node => node.nodeType == 3 ? node.data : '@' ).join( '' ).replace( /\u00A0/g, ' ' );
+
+	const changes = diff( actualText, expectedText );
+
+	const deletionOffsets = [];
+	const insertionOffsets = [];
+
+	for ( let i = 1; i < changes.length; i++ ) {
+		if ( changes[ i ] === 'delete' && changes[ i - 1 ] !== 'delete' ) {
+			deletionOffsets.push( i );
+		}
+
+		if ( changes[ i ] === 'insert' && changes[ i - 1 ] !== 'insert' ) {
+			insertionOffsets.push( i );
+		}
+	}
+
+	return { deletionOffsets, insertionOffsets };
 }
