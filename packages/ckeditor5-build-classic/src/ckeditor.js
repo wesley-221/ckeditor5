@@ -31,8 +31,8 @@ import Table from '@ckeditor/ckeditor5-table/src/table';
 import TableToolbar from '@ckeditor/ckeditor5-table/src/tabletoolbar';
 import TextTransformation from '@ckeditor/ckeditor5-typing/src/texttransformation';
 
-class ClassicEditor extends ClassicEditorBase {}
-class InlineEditor extends InlineEditorBase {}
+class ClassicEditor extends ClassicEditorBase { }
+class InlineEditor extends InlineEditorBase { }
 
 // Plugins to include in the build.
 const plugins = [
@@ -84,6 +84,9 @@ const config = {
 			'undo',
 			'redo'
 		]
+	},
+	image: {
+		toolbar: []
 	},
 	table: {
 		contentToolbar: [
