@@ -12,6 +12,7 @@ import UploadAdapter from '@ckeditor/ckeditor5-adapter-ckfinder/src/uploadadapte
 import Autoformat from '@ckeditor/ckeditor5-autoformat/src/autoformat';
 import Bold from '@ckeditor/ckeditor5-basic-styles/src/bold';
 import Italic from '@ckeditor/ckeditor5-basic-styles/src/italic';
+import Underline from '@ckeditor/ckeditor5-basic-styles/src/underline';
 import BlockQuote from '@ckeditor/ckeditor5-block-quote/src/blockquote';
 import CKFinder from '@ckeditor/ckeditor5-ckfinder/src/ckfinder';
 import EasyImage from '@ckeditor/ckeditor5-easy-image/src/easyimage';
@@ -30,6 +31,7 @@ import PasteFromOffice from '@ckeditor/ckeditor5-paste-from-office/src/pastefrom
 import Table from '@ckeditor/ckeditor5-table/src/table';
 import TableToolbar from '@ckeditor/ckeditor5-table/src/tabletoolbar';
 import TextTransformation from '@ckeditor/ckeditor5-typing/src/texttransformation';
+import Alignment from '@ckeditor/ckeditor5-alignment/src/alignment';
 
 class ClassicEditor extends ClassicEditorBase { }
 class InlineEditor extends InlineEditorBase { }
@@ -41,6 +43,7 @@ const plugins = [
 	Autoformat,
 	Bold,
 	Italic,
+	Underline,
 	BlockQuote,
 	CKFinder,
 	EasyImage,
@@ -58,7 +61,8 @@ const plugins = [
 	PasteFromOffice,
 	Table,
 	TableToolbar,
-	TextTransformation
+	TextTransformation,
+	Alignment
 ];
 
 ClassicEditor.builtinPlugins = plugins;
@@ -72,10 +76,15 @@ const config = {
 			'|',
 			'bold',
 			'italic',
+			'underline',
 			'link',
+			'|',
+			'alignment:left',
+			'alignment:center',
+			'alignment:right',
+			'|',
 			'bulletedList',
 			'numberedList',
-			'|',
 			'indent',
 			'outdent',
 			'|',
@@ -85,8 +94,8 @@ const config = {
 			'redo'
 		]
 	},
-	image: {
-		toolbar: []
+	alignment: {
+		options: ['left', 'right', 'center']
 	},
 	table: {
 		contentToolbar: [
